@@ -4,12 +4,14 @@ import path from "path";
 import axios from "axios";
 import dotenv from "dotenv";
 import { 
-  serverGenerateContentPlan,
-  serverDetectVariables,
-  serverGenerateText,
   serverGenerateImage,
   serverGenerateSpeech
 } from "./src/server/geminiService";
+import {
+  serverGenerateContentPlan,
+  serverDetectVariables,
+  serverGenerateText
+} from "./src/server/openaiService";
 
 dotenv.config();
 
@@ -167,67 +169,12 @@ async function startServer() {
   });
 
   app.post("/api/gemini/generate-speech", async (req, res) => {
-    try {
-      const { text, voice, lang } = req.body;
-      const audioUrl = await serverGenerateSpeech(text, voice, lang);
-
-      // Save successful audio generations as static files
-      if (audioUrl && audioUrl.startsWith("data:audio/wav;base64,")) {
-        try {
-          const fs = await import("fs");
-          const publicDir = path.join(process.cwd(), "public");
-          const samplesDir = path.join(publicDir, "audio_samples");
-          
-          if (!fs.existsSync(publicDir)) {
-            fs.mkdirSync(publicDir, { recursive: true });
-          }
-          if (!fs.existsSync(samplesDir)) {
-            fs.mkdirSync(samplesDir, { recursive: true });
-          }
-
-          const base64Data = audioUrl.substring("data:audio/wav;base64,".length);
-          const buffer = Buffer.from(base64Data, "base64");
-          
-          // Use a clean counter or simple structure. We can use a timestamp
-          const id = Date.now().toString();
-          const filename = `sample_${id}_${voice}_${lang}.wav`;
-          const filePath = path.join(samplesDir, filename);
-          
-          fs.writeFileSync(filePath, buffer);
-          console.log(`Saved audio sample to ${filePath}`);
-
-          // Update manifest
-          const manifestPath = path.join(samplesDir, "manifest.json");
-          let manifest = [];
-          if (fs.existsSync(manifestPath)) {
-            try {
-              manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-            } catch (e) {
-              manifest = [];
-            }
-          }
-          
-          manifest.push({
-            id,
-            filename: `/audio_samples/${filename}`,
-            voice,
-            lang,
-            textSnippet: text ? (text.length > 80 ? text.substring(0, 80) + "..." : text) : "",
-            fullText: text
-          });
-
-          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
-          console.log(`Updated audio manifest at ${manifestPath}`);
-        } catch (saveErr) {
-          console.error("Failed to save audio sample on server:", saveErr);
-        }
-      }
-
-      res.json({ audioUrl });
-    } catch (error: any) {
-      console.error("Gemini Generate Speech Error:", error);
-      res.status(500).json({ error: error?.message || "Internal Server Error" });
-    }
+    const { lang } = req.body;
+    const isEn = lang === 'en';
+    const msg = isEn 
+      ? "In the demo version, generating audio is disabled. You can listen to ready-made examples instead."
+      : "В демо-версии генерация аудио отключена. Вместо этого вы можете прослушать готовые примеры.";
+    return res.status(403).json({ error: msg });
   });
 
   app.get("/api/gemini/speech-samples", async (req, res) => {

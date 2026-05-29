@@ -17,7 +17,8 @@ import {
   AlertCircle,
   X,
   Volume2,
-  VolumeX
+  VolumeX,
+  Headphones
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -1851,103 +1852,23 @@ export default function App() {
 
                     {currentResult.type === 'podcast' && (
                       <div className="pt-6 border-t border-slate-100 space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{lang === 'en' ? 'Provider' : 'Провайдер'}</label>
-                            <select 
-                              value={settings.ttsProvider}
-                              onChange={(e) => setSettings({ ...settings, ttsProvider: e.target.value as any })}
-                              className="w-full p-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-primary/20 outline-none transition-all text-sm"
-                            >
-                              <option value="gemini">Google (Gemini)</option>
-                              <option value="elevenlabs" disabled>ElevenLabs ({lang === 'en' ? 'Unavailable in demo' : 'Недоступно в демо'})</option>
-                              <option value="yandex" disabled>Yandex SpeechKit ({lang === 'en' ? 'Unavailable in demo' : 'Недоступно в демо'})</option>
-                            </select>
-                            <p className="text-[10px] text-amber-600 font-medium leading-normal mt-1 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10">
-                              ⚠️ {lang === 'en' 
-                                ? 'Only Gemini TTS is available in the demo version. ElevenLabs and Yandex require API keys.' 
-                                : 'В демо-версии доступен только Gemini TTS. ElevenLabs и Yandex требуют свои API-ключи.'}
+                        <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-start gap-3.5 shadow-sm">
+                          <div className="p-2 bg-indigo-500/10 text-indigo-600 rounded-xl">
+                            <Headphones className="w-5 h-5 text-indigo-500" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-slate-800 text-sm">
+                              {lang === 'en' ? 'Audio Generation Limit' : 'Ограничение генерации аудио'}
+                            </h4>
+                            <p className="text-xs text-slate-600 leading-relaxed mt-1">
+                              {lang === 'en' 
+                                ? 'In the demo version, it is impossible to generate audio, you can only listen to pre-generated examples below.' 
+                                : 'В демо-версии невозможно сгенерировать аудио, можно только послушать заранее сгенерированные примеры в нашей библиотеке ниже.'}
                             </p>
                           </div>
-
-                          <div className="space-y-2">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{lang === 'en' ? 'Speed' : 'Скорость'}</label>
-                            <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl">
-                              <input 
-                                type="range" min="0.5" max="2.0" step="0.1" 
-                                value={audioSettings.speed} 
-                                onChange={(e) => setAudioSettings({ ...audioSettings, speed: parseFloat(e.target.value) })}
-                                className="flex-1"
-                              />
-                              <span className="text-xs font-bold text-slate-600 min-w-[30px]">{audioSettings.speed}x</span>
-                            </div>
-                          </div>
                         </div>
 
-                        <div className="space-y-3">
-                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{lang === 'en' ? 'Select voice' : 'Выберите голос'}</label>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            {VOICES[settings.ttsProvider].map((voice: any) => (
-                              <div
-                                key={voice.id}
-                                onClick={() => setSelectedVoiceId(voice.id)}
-                                className={cn(
-                                  "p-3 rounded-xl border-2 transition-all text-left relative group cursor-pointer",
-                                  selectedVoiceId === voice.id || (!selectedVoiceId && VOICES[settings.ttsProvider][0].id === voice.id)
-                                    ? "border-primary bg-primary/5" 
-                                    : "border-slate-100 hover:border-slate-200 bg-white"
-                                )}
-                              >
-                                <div className="text-xs font-bold text-slate-900 truncate pr-6">{voice.name[lang] || voice.name.ru}</div>
-                                <div className="text-[10px] text-slate-400 capitalize">{voice.gender === 'female' ? (lang === 'en' ? 'Female' : 'Женский') : (lang === 'en' ? 'Male' : 'Мужской')}</div>
-                                
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handlePreviewVoice(voice.id);
-                                  }}
-                                  disabled={isPreviewing === voice.id}
-                                  className="absolute top-2 right-2 p-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors z-10"
-                                  title={lang === 'en' ? "Preview" : "Прослушать"}
-                                >
-                                  {isPreviewing === voice.id ? (
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <Play className="w-3 h-3" />
-                                  )}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {currentResult.audioUrl ? (
-                          <div className="space-y-3">
-                            <audio controls src={currentResult.audioUrl} className="w-full" />
-                            <button 
-                              onClick={() => setResults(prev => ({
-                                ...prev,
-                                [activeTab]: prev[activeTab] ? { ...prev[activeTab]!, audioUrl: undefined } : null
-                              }))}
-                              className="text-xs text-slate-400 hover:text-red-500 transition-colors flex items-center gap-1 mx-auto"
-                            >
-                              <RefreshCw className="w-3 h-3" /> {lang === 'en' ? 'Regenerate with another voice' : 'Перегенерировать с другим голосом'}
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <button 
-                              onClick={() => handleTts()}
-                              disabled={isAudioGenerating}
-                              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 disabled:opacity-50"
-                            >
-                              {isAudioGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
-                              {lang === 'en' ? 'Generate audio' : 'Сгенерировать аудио'}
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="pt-4">
+                        <div className="pt-2">
                           <AudioSamples lang={lang} />
                         </div>
                       </div>
