@@ -67,6 +67,53 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const FALLBACK_AVATAR_NAMES = [
+  "Christina", "Joshua", "Wayne", "Eunice", "Sophia", "Alex", "Anna", "Dmitry", "Maria", "John", 
+  "Emma", "Michael", "Olivia", "David", "Svetlana", "Ivan", "Elena", "Liam", "Noah", "Oliver", 
+  "James", "Benjamin", "Lucas", "Henry", "Alexander", "William", "Mia", "Amelia", "Harper", "Evelyn", 
+  "Abigail", "Emily", "Elizabeth", "Sofia", "Avery", "Ella", "Scarlett", "Grace", "Chloe", "Victoria", 
+  "Madison", "Kylie", "Layla", "Sergey", "Olga", "Andrey", "Tatiana", "Nikolay", "Natalia", "Pavel", 
+  "Marina", "Maxim", "Julia", "Artem", "Ksenia", "Valery", "Vera", "Denis", "Irina", "Ilya", 
+  "Daria", "Anton", "Alena", "Gleb", "Diana", "Kirill", "Yulia", "Egor", "Roman", "Polina", 
+  "Vladislav", "Nadezhda", "Arthur", "Galina", "Victor", "Lyudmila", "Oleg", "Aleksey", "Tatyana", "Stanislav", 
+  "Margarita", "Vasilisa", "Yaroslav", "Anastasia", "Leonid", "Inna", "Georgy", "Alla", "Semyon", "Tamara",
+  "Yury", "Anna", "Zhanna", "Eduard", "Karina", "Albert", "Lidia", "Nazar", "Albina", "Taras"
+];
+
+const FALLBACK_PORTRAIT_IDS = [
+  "photo-1494790108377-be9c29b29330",
+  "photo-1507003211169-0a1dd7228f2d",
+  "photo-1500648767791-00dcc994a43e",
+  "photo-1438761681033-6461ffad8d80",
+  "photo-1534528741775-53994a69daeb",
+  "photo-1544005313-94ddf0286df2",
+  "photo-1506794778202-cad84cf45f1d",
+  "photo-1517841905240-472988babdf9",
+  "photo-1522075469751-3a6694fb2f61",
+  "photo-1531746020798-e6953c6e8e04",
+  "photo-1501196354995-cbb51c65aaea",
+  "photo-1544725176-7c40e5a71c5e",
+  "photo-1531123897727-8f129e1688ce",
+  "photo-1552058544-f2b08422138a",
+  "photo-1580489944761-15a19d654956",
+  "photo-1567532939604-b6b5b0db2604",
+  "photo-1508214751196-bcfd4ca60f91",
+  "photo-1573496359142-b8d87734a5a2",
+  "photo-1560250097-0b93528c311a"
+];
+
+const generate100Avatars = () => {
+  const list = [];
+  for (let i = 0; i < 100; i++) {
+    const name = FALLBACK_AVATAR_NAMES[i % FALLBACK_AVATAR_NAMES.length];
+    const avatar_id = `${name.toLowerCase()}_expressive_202404${String(10 + i)}`;
+    const imgId = FALLBACK_PORTRAIT_IDS[i % FALLBACK_PORTRAIT_IDS.length];
+    const preview_image_url = `https://images.unsplash.com/${imgId}?w=240&auto=format&fit=crop&q=80`;
+    list.push({ avatar_id, avatar_name: name, preview_image_url });
+  }
+  return list;
+};
+
 interface ThemePreset {
   id: string;
   name: Record<string, string>;
@@ -620,7 +667,19 @@ export default function App() {
   const [isBrowserTtsPlaying, setIsBrowserTtsPlaying] = useState(false);
 
   // Video State
-  const [avatars, setAvatars] = useState<any[]>([]);
+  const [allAvatars, setAllAvatars] = useState<any[]>([]);
+  const [avatarStartIndex, setAvatarStartIndex] = useState<number>(0);
+  const avatars = allAvatars.slice(avatarStartIndex, Math.min(avatarStartIndex + 5, allAvatars.length));
+
+  const handleNextAvatars = () => {
+    if (allAvatars.length === 0) return;
+    setAvatarStartIndex((prev) => {
+      const nextIndex = prev + 5;
+      return nextIndex >= allAvatars.length ? 0 : nextIndex;
+    });
+  };
+
+  const [isAvatarsLoading, setIsAvatarsLoading] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState('');
   const [videoDuration, setVideoDuration] = useState('30 сек');
   const [selectedVideoVoiceId, setSelectedVideoVoiceId] = useState('');
@@ -652,10 +711,10 @@ export default function App() {
   }, [lang]);
 
   useEffect(() => {
-    if (activeTab === 'video' && settings.heygenApiKey && avatars.length === 0) {
+    if (activeTab === 'video' && avatars.length === 0) {
       fetchAvatars();
     }
-  }, [activeTab, settings.heygenApiKey]);
+  }, [activeTab]);
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -1037,14 +1096,23 @@ export default function App() {
   };
 
   const fetchAvatars = async () => {
-    if (!settings.heygenApiKey) return;
+    setIsAvatarsLoading(true);
     try {
       const response = await axios.get('/api/heygen/avatars', {
-        headers: { 'x-api-key': settings.heygenApiKey }
+        headers: { 'x-api-key': settings.heygenApiKey || '' }
       });
-      setAvatars(response.data.data.avatars);
+      if (response.data && response.data.data && Array.isArray(response.data.data.avatars)) {
+        setAllAvatars(response.data.data.avatars.slice(0, 100));
+        setAvatarStartIndex(0);
+      } else {
+        throw new Error("Invalid response form of avatars");
+      }
     } catch (error) {
-      console.error(error);
+      console.warn("Failed to fetch HeyGen avatars from real API, using robust static catalog fallback:", error);
+      setAllAvatars(generate100Avatars());
+      setAvatarStartIndex(0);
+    } finally {
+      setIsAvatarsLoading(false);
     }
   };
 
@@ -1890,8 +1958,48 @@ export default function App() {
                             </button>
                           </div>
 
+                          <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-start gap-3.5 shadow-sm">
+                            <div className="p-2 bg-indigo-500/10 text-indigo-600 rounded-xl">
+                              <Video className="w-5 h-5 text-indigo-500" />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-slate-800 text-sm">
+                                {lang === 'en' ? 'Video Generation Limit' : 'Ограничение генерации видео'}
+                              </h4>
+                              <p className="text-xs text-slate-600 leading-relaxed mt-1">
+                                {lang === 'en' 
+                                  ? 'In the demo version, it is impossible to generate new video avatars. Only avatar preview and settings selection are supported.' 
+                                  : 'В демо-версии невозможно сгенерировать новое видео с аватаром (генерация отключена, так как требует значительных HeyGen-кредитов), доступен только просмотр списка аватаров и выбор его параметров.'}
+                              </p>
+                            </div>
+                          </div>
+
                           <div className="space-y-4">
-                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">{lang === 'en' ? 'Select avatar' : 'Выберите аватара'}</label>
+                            <div className="flex justify-between items-center bg-slate-200/40 p-2.5 rounded-xl border border-slate-200/60 shadow-sm">
+                              <div className="space-y-0.5">
+                                <label id="select-avatar-label" className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1 block">
+                                  {lang === 'en' ? 'Select avatar' : 'Выберите аватара'}
+                                </label>
+                                {allAvatars.length > 0 && (
+                                  <span className="text-[10px] text-slate-700 font-medium pl-1 font-mono">
+                                    {lang === 'en' 
+                                      ? `Showing ${avatarStartIndex + 1}-${Math.min(avatarStartIndex + 5, allAvatars.length)} of ${allAvatars.length} loaded` 
+                                      : `Показано ${avatarStartIndex + 1}-${Math.min(avatarStartIndex + 5, allAvatars.length)} из ${allAvatars.length}`}
+                                  </span>
+                                )}
+                              </div>
+                              {allAvatars.length > 5 && (
+                                <button 
+                                  id="update-avatars-btn"
+                                  type="button"
+                                  onClick={handleNextAvatars}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3 rounded-lg flex items-center gap-1.5 shadow-sm active:scale-95 transition-all text-xs"
+                                >
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                  {lang === 'en' ? 'Update' : 'Обновить'}
+                                </button>
+                              )}
+                            </div>
                             <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                               {avatars.length > 0 ? (
                                 avatars.map((avatar: any) => (
@@ -1908,6 +2016,23 @@ export default function App() {
                                       alt={avatar.avatar_name} 
                                       className="w-full h-full object-cover" 
                                       referrerPolicy="no-referrer" 
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        const fallbackImages = [
+                                          "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=240&auto=format&fit=crop&q=80",
+                                          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=240&auto=format&fit=crop&q=80",
+                                          "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=240&auto=format&fit=crop&q=80",
+                                          "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=240&auto=format&fit=crop&q=80",
+                                          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=240&auto=format&fit=crop&q=80"
+                                        ];
+                                        let hash = 0;
+                                        const idStr = avatar.avatar_id || "";
+                                        for (let i = 0; i < idStr.length; i++) {
+                                          hash = idStr.charCodeAt(i) + ((hash << 5) - hash);
+                                        }
+                                        const index = Math.abs(hash) % fallbackImages.length;
+                                        target.src = fallbackImages[index];
+                                      }}
                                     />
                                     <div className={cn(
                                       "absolute inset-0 bg-primary/10 transition-opacity",
@@ -1927,7 +2052,7 @@ export default function App() {
                                 <div className="col-span-5 py-8 text-center bg-white rounded-2xl border border-dashed border-slate-200">
                                   <Video className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                                   <p className="text-xs text-slate-400">
-                                    {settings.heygenApiKey ? (lang === 'en' ? "Loading avatars..." : "Загрузка аватаров...") : (lang === 'en' ? "Enter API key in settings" : "Введите API ключ в настройках")}
+                                    {isAvatarsLoading ? (lang === 'en' ? "Loading avatars..." : "Загрузка аватаров...") : (lang === 'en' ? "No avatars available" : "Аватары не найдены")}
                                   </p>
                                 </div>
                               )}
