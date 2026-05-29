@@ -1,0 +1,11 @@
+{
+  "name": "AI Content Maker",
+  "description": "A comprehensive AI-powered content generation platform for online schools, featuring content plans, newsletters, longreads, podcasts, and video avatars.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
