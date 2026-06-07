@@ -1021,7 +1021,7 @@ export default function App() {
     }
   };
 
-  const speakWithBrowserTTS = (text: string) => {
+  const speakWithBrowserTTS = (text: string, overrideVoiceId?: string) => {
     if (!('speechSynthesis' in window)) {
       setError(lang === 'en' ? 'Web Speech API is not supported in this browser' : 'Ваш браузер не поддерживает встроенный синтез речи');
       return;
@@ -1049,7 +1049,8 @@ export default function App() {
     utterance.rate = audioSettings.speed || 1.0;
 
     const voices = window.speechSynthesis.getVoices();
-    const currentVoiceObj = VOICES[settings.ttsProvider]?.find(v => v.id === selectedVoiceId);
+    const currentVoiceId = overrideVoiceId || selectedVoiceId;
+    const currentVoiceObj = VOICES[settings.ttsProvider]?.find(v => v.id === currentVoiceId);
     const isFemale = currentVoiceObj?.gender === 'female';
 
     const matchingVoice = voices.find(v => {
@@ -1081,15 +1082,21 @@ export default function App() {
 
   const handlePreviewVoice = async (voiceId: string) => {
     setIsPreviewing(voiceId);
+    const previewText = lang === 'en' ? "Hello! This is an example of my voice. How do you like it?" : "Привет! Это пример моего голоса. Как я тебе?";
     try {
-      const previewText = lang === 'en' ? "Hello! This is an example of my voice. How do you like it?" : "Привет! Это пример моего голоса. Как я тебе?";
       const previewUrl = await handleTts(previewText, voiceId);
       if (previewUrl) {
         const audio = new Audio(previewUrl as string);
-        audio.play();
+        audio.play().catch(err => {
+          console.warn("Audio play failed, falling back to browser TTS:", err);
+          speakWithBrowserTTS(previewText, voiceId);
+        });
+      } else {
+        speakWithBrowserTTS(previewText, voiceId);
       }
     } catch (error) {
-      console.error(error);
+      console.warn("Failed to generate preview TTS, falling back to browser synthesis:", error);
+      speakWithBrowserTTS(previewText, voiceId);
     } finally {
       setIsPreviewing(null);
     }

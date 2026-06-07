@@ -124,6 +124,11 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [progress, setProgress] = useState<number>(0);
 
+  // Fallback Speech Synthesis Refs
+  const isSynthesizingRef = useRef<boolean>(false);
+  const timerIntervalRef = useRef<any>(null);
+  const synthCurrentTimeRef = useRef<number>(0);
+
   // Filters samples by language matching active filter
   const filteredSamples = SELECTED_SAMPLES.filter(sample => {
     if (activeTab === 'all') return true;
@@ -135,12 +140,123 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
     setActiveTab(lang);
   }, [lang]);
 
-  // Handle playing audio sequence
+  const stopAllPlayback = () => {
+    // Stop real audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    // Stop speech synthesis
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    // Clear timer
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    isSynthesizingRef.current = false;
+  };
+
+  const startSpeechSynthesisPlay = (sample: AudioSample) => {
+    stopAllPlayback();
+
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setPlayingId(null);
+      return;
+    }
+
+    isSynthesizingRef.current = true;
+    setPlayingId(sample.id);
+
+    const words = sample.fullText.split(/\s+/).length;
+    // Assume average speed of ~2.4 words per second
+    const estimatedDuration = Math.round(words / 2.4) || 45;
+    
+    setDurations(prev => ({ ...prev, [sample.id]: estimatedDuration }));
+    setCurrentTime(0);
+    setProgress(0);
+    synthCurrentTimeRef.current = 0;
+
+    const utterance = new SpeechSynthesisUtterance(sample.fullText);
+    utterance.lang = sample.lang === 'ru' ? 'ru-RU' : 'en-US';
+    utterance.rate = 1.0;
+
+    // Load available voices
+    const voices = window.speechSynthesis.getVoices();
+    const isFemale = ["Zephyr", "Kore", "Eunice", "Christina"].includes(sample.voice);
+    const matchingVoice = voices.find(v => {
+      const matchesLang = sample.lang === 'ru' ? v.lang.startsWith('ru') : v.lang.startsWith('en');
+      if (!matchesLang) return false;
+      const lowerName = v.name.toLowerCase();
+      if (isFemale) {
+        return lowerName.includes('female') || lowerName.includes('zira') || lowerName.includes('irina') || lowerName.includes('google') || lowerName.includes('alena') || lowerName.includes('samantha') || lowerName.includes('kore') || lowerName.includes('zephyr');
+      } else {
+        return lowerName.includes('male') || lowerName.includes('david') || lowerName.includes('pavel') || lowerName.includes('dmitry') || lowerName.includes('microsoft');
+      }
+    }) || voices.find(v => sample.lang === 'ru' ? v.lang.startsWith('ru') : v.lang.startsWith('en'));
+
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
+
+    utterance.onend = () => {
+      setPlayingId(null);
+      setProgress(0);
+      setCurrentTime(0);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      isSynthesizingRef.current = false;
+    };
+
+    utterance.onerror = () => {
+      setPlayingId(null);
+      setProgress(0);
+      setCurrentTime(0);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      isSynthesizingRef.current = false;
+    };
+
+    const intervalMs = 100;
+    timerIntervalRef.current = setInterval(() => {
+      if (window.speechSynthesis.paused) return; // Don't advance timer if paused
+
+      synthCurrentTimeRef.current += intervalMs / 1000;
+      if (synthCurrentTimeRef.current >= estimatedDuration) {
+        synthCurrentTimeRef.current = estimatedDuration;
+      }
+      setCurrentTime(synthCurrentTimeRef.current);
+      setProgress((synthCurrentTimeRef.current / estimatedDuration) * 100);
+    }, intervalMs);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
   const handlePlayToggle = (sample: AudioSample) => {
     if (playingId === sample.id) {
-      if (audioRef.current) {
+      if (isSynthesizingRef.current) {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          if (window.speechSynthesis.speaking) {
+            if (window.speechSynthesis.paused) {
+              window.speechSynthesis.resume();
+            } else {
+              window.speechSynthesis.pause();
+            }
+          } else {
+            startSpeechSynthesisPlay(sample);
+          }
+        }
+      } else if (audioRef.current) {
         if (audioRef.current.paused) {
-          audioRef.current.play().catch(err => console.error("Audio play error:", err));
+          audioRef.current.play().catch(err => {
+            console.warn("Audio play failed, falling back to speech synthesis:", err);
+            startSpeechSynthesisPlay(sample);
+          });
           setPlayingId(sample.id);
         } else {
           audioRef.current.pause();
@@ -148,9 +264,8 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
         }
       }
     } else {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      stopAllPlayback();
+      
       const newAudio = new Audio(sample.filename);
       audioRef.current = newAudio;
       setPlayingId(sample.id);
@@ -175,8 +290,8 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
       });
 
       newAudio.play().catch(err => {
-        console.error("Audio play error:", err);
-        setPlayingId(null);
+        console.warn("Audio file play failed, using fallback Web Speech Synthesis:", err);
+        startSpeechSynthesisPlay(sample);
       });
     }
   };
@@ -184,9 +299,7 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
   // Stops playing audio if component unmounts
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
+      stopAllPlayback();
     };
   }, []);
 
