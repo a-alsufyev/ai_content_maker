@@ -271,12 +271,14 @@ async function startServer() {
   });
 
   app.post("/api/gemini/generate-speech", async (req, res) => {
-    const { lang } = req.body;
-    const isEn = lang === 'en';
-    const msg = isEn 
-      ? "In the demo version, generating audio is disabled. You can listen to ready-made examples instead."
-      : "В демо-версии генерация аудио отключена. Вместо этого вы можете прослушать готовые примеры.";
-    return res.status(403).json({ error: msg });
+    try {
+      const { text, voice, lang } = req.body;
+      const audioUrl = await serverGenerateSpeech(text, voice, lang);
+      res.json({ audioUrl });
+    } catch (error: any) {
+      console.error("Gemini Generate Speech Error:", error);
+      res.status(500).json({ error: error?.message || "Internal Server Error" });
+    }
   });
 
   app.get("/api/gemini/speech-samples", async (req, res) => {

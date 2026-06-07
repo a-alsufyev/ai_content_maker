@@ -158,6 +158,20 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
     isSynthesizingRef.current = false;
   };
 
+  const isFemaleName = (name: string): boolean => {
+    const lower = name.toLowerCase();
+    if (lower.includes('female') || lower.includes('zira') || lower.includes('samantha') || lower.includes('hazel') || lower.includes('susan') || lower.includes('harriet') || lower.includes('lisa')) return true;
+    if (lower.includes('irina') || lower.includes('elena') || lower.includes('milena') || lower.includes('katya') || lower.includes('alena') || lower.includes('tatiana') || lower.includes('olga') || lower.includes('victoria') || lower.includes('anna')) return true;
+    return false;
+  };
+
+  const isMaleName = (name: string): boolean => {
+    const lower = name.toLowerCase();
+    if (lower.includes('male') || lower.includes('david') || lower.includes('george') || lower.includes('ravi') || lower.includes('mark') || lower.includes('peter')) return true;
+    if (lower.includes('pavel') || lower.includes('dmitry') || lower.includes('yuri') || lower.includes('yury') || lower.includes('alexander') || lower.includes('sergey') || lower.includes('ivan')) return true;
+    return false;
+  };
+
   const startSpeechSynthesisPlay = (sample: AudioSample) => {
     stopAllPlayback();
 
@@ -185,16 +199,39 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
     // Load available voices
     const voices = window.speechSynthesis.getVoices();
     const isFemale = ["Zephyr", "Kore", "Eunice", "Christina"].includes(sample.voice);
-    const matchingVoice = voices.find(v => {
-      const matchesLang = sample.lang === 'ru' ? v.lang.startsWith('ru') : v.lang.startsWith('en');
+    
+    // 1. Try exact matching by gender and language
+    let matchingVoice = voices.find(v => {
+      const matchesLang = sample.lang === 'ru' ? (v.lang.startsWith('ru') || v.lang.replace('_', '-').startsWith('ru')) : (v.lang.startsWith('en') || v.lang.replace('_', '-').startsWith('en'));
       if (!matchesLang) return false;
-      const lowerName = v.name.toLowerCase();
+      
       if (isFemale) {
-        return lowerName.includes('female') || lowerName.includes('zira') || lowerName.includes('irina') || lowerName.includes('google') || lowerName.includes('alena') || lowerName.includes('samantha') || lowerName.includes('kore') || lowerName.includes('zephyr');
+        return isFemaleName(v.name) && !isMaleName(v.name);
       } else {
-        return lowerName.includes('male') || lowerName.includes('david') || lowerName.includes('pavel') || lowerName.includes('dmitry') || lowerName.includes('microsoft');
+        return isMaleName(v.name) && !isFemaleName(v.name);
       }
-    }) || voices.find(v => sample.lang === 'ru' ? v.lang.startsWith('ru') : v.lang.startsWith('en'));
+    });
+
+    // 2. If no exact gender matches, try to find any voice of that language that is not the opposite gender
+    if (!matchingVoice) {
+      matchingVoice = voices.find(v => {
+        const matchesLang = sample.lang === 'ru' ? (v.lang.startsWith('ru') || v.lang.replace('_', '-').startsWith('ru')) : (v.lang.startsWith('en') || v.lang.replace('_', '-').startsWith('en'));
+        if (!matchesLang) return false;
+        
+        if (isFemale) {
+          return !isMaleName(v.name);
+        } else {
+          return !isFemaleName(v.name);
+        }
+      });
+    }
+
+    // 3. Absolute fallback
+    if (!matchingVoice) {
+      matchingVoice = voices.find(v => {
+        return sample.lang === 'ru' ? (v.lang.startsWith('ru') || v.lang.replace('_', '-').startsWith('ru')) : (v.lang.startsWith('en') || v.lang.replace('_', '-').startsWith('en'));
+      });
+    }
 
     if (matchingVoice) {
       utterance.voice = matchingVoice;
@@ -253,9 +290,46 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
         }
       } else if (audioRef.current) {
         if (audioRef.current.paused) {
-          audioRef.current.play().catch(err => {
-            console.warn("Audio play failed, falling back to speech synthesis:", err);
-            startSpeechSynthesisPlay(sample);
+          audioRef.current.play().catch(async (err) => {
+            console.warn("Audio play failed, trying premium server-side synthesis...", err);
+            try {
+              const response = await fetch("/api/gemini/generate-speech", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: sample.fullText, voice: sample.voice, lang: sample.lang }),
+              });
+              if (response.ok) {
+                const data = await response.json();
+                if (data.audioUrl) {
+                  const premiumAudio = new Audio(data.audioUrl);
+                  audioRef.current = premiumAudio;
+                  
+                  premiumAudio.addEventListener('timeupdate', () => {
+                    if (premiumAudio.duration) {
+                      setCurrentTime(premiumAudio.currentTime);
+                      setProgress((premiumAudio.currentTime / premiumAudio.duration) * 100);
+                    }
+                  });
+
+                  premiumAudio.addEventListener('loadedmetadata', () => {
+                    setDurations(prev => ({ ...prev, [sample.id]: premiumAudio.duration }));
+                  });
+
+                  premiumAudio.addEventListener('ended', () => {
+                    setPlayingId(null);
+                    setProgress(0);
+                    setCurrentTime(0);
+                  });
+
+                  await premiumAudio.play();
+                  return;
+                }
+              }
+              throw new Error("Server synthesis failed or returned empty URL");
+            } catch (serverErr) {
+              console.warn("Premium server synthesis failed, falling back to Web Speech Synthesis:", serverErr);
+              startSpeechSynthesisPlay(sample);
+            }
           });
           setPlayingId(sample.id);
         } else {
@@ -289,9 +363,46 @@ export function AudioSamples({ lang }: AudioSamplesProps) {
         setCurrentTime(0);
       });
 
-      newAudio.play().catch(err => {
-        console.warn("Audio file play failed, using fallback Web Speech Synthesis:", err);
-        startSpeechSynthesisPlay(sample);
+      newAudio.play().catch(async (err) => {
+        console.warn("Audio file read failed on sample file, trying premium server-side synthesis...", err);
+        try {
+          const response = await fetch("/api/gemini/generate-speech", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: sample.fullText, voice: sample.voice, lang: sample.lang }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.audioUrl) {
+              const premiumAudio = new Audio(data.audioUrl);
+              audioRef.current = premiumAudio;
+              
+              premiumAudio.addEventListener('timeupdate', () => {
+                if (premiumAudio.duration) {
+                  setCurrentTime(premiumAudio.currentTime);
+                  setProgress((premiumAudio.currentTime / premiumAudio.duration) * 100);
+                }
+              });
+
+              premiumAudio.addEventListener('loadedmetadata', () => {
+                setDurations(prev => ({ ...prev, [sample.id]: premiumAudio.duration }));
+              });
+
+              premiumAudio.addEventListener('ended', () => {
+                setPlayingId(null);
+                setProgress(0);
+                setCurrentTime(0);
+              });
+
+              await premiumAudio.play();
+              return;
+            }
+          }
+          throw new Error("Server synthesis failed or returned empty URL");
+        } catch (serverErr) {
+          console.warn("Premium server synthesis failed, falling back to Web Speech Synthesis:", serverErr);
+          startSpeechSynthesisPlay(sample);
+        }
       });
     }
   };
